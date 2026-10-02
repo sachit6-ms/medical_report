@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Medical Report Summarizer & Condition Separation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="app-layout">
+
+    <!-- Top Medical Safety Alert Banner -->
+    <aside class="disclaimer-banner" role="alert" aria-label="Medical Disclaimer">
+        <div class="disclaimer-content">
+            <span class="disclaimer-badge">MEDICAL SAFETY NOTICE</span>
+            <p>
+                <strong>Educational Purpose Only:</strong> This system summarizes information present in the uploaded medical report for educational purposes. It is not a medical diagnosis and should not replace evaluation by a qualified healthcare professional.
+            </p>
+        </div>
+    </aside>
+
+    <div class="container">
+
+        <!-- Header -->
+        <header class="main-header">
+            <div class="header-brand">
+                <div class="logo-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>AI Medical Report Summarizer</h1>
+                    <p class="subtitle">Intelligent Condition Separation & Structured Clinical Synthesis with Local Llama 3.2 3B</p>
+                </div>
+            </div>
+            <div class="header-badges">
+                <span class="engine-badge">
+                    <span class="status-dot green"></span> Local Ollama Active
+                </span>
+                <span class="engine-badge model">Model: llama3.2:3b</span>
+            </div>
+        </header>
+
+        <!-- System Notification / Ollama Status Banner -->
+        <div id="statusAlert" class="status-alert hidden" role="status">
+            <span id="statusAlertIcon" class="alert-icon">ℹ</span>
+            <span id="statusAlertText"></span>
+        </div>
+
+        <!-- SECTION 1: Upload Medical Report -->
+        <section class="card upload-section" id="uploadSection">
+            <div class="card-header">
+                <h2>1. Upload Medical Report</h2>
+                <span class="tag">PDF Format Only (Max 16MB)</span>
+            </div>
+
+            <div class="upload-dropzone" id="dropZone">
+                <input type="file" id="fileInput" accept=".pdf" class="file-input-hidden">
+                <div class="dropzone-inner" onclick="document.getElementById('fileInput').click()">
+                    <div class="upload-icon-circle">
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <div class="dropzone-text">
+                        <p class="dropzone-title">Click to select or drag & drop medical PDF</p>
+                        <p class="dropzone-hint">Supports CBC, Metabolic Panels, Lipid Profiles, Clinical Notes & Pathology Reports</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="fileSelectionBar" class="file-selection-bar hidden">
+                <div class="selected-file-info">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    <span id="selectedFileName" class="file-name">filename.pdf</span>
+                    <span id="selectedFileSize" class="file-size">0 KB</span>
+                </div>
+                <button type="button" class="btn-clear" onclick="clearSelectedFile()">Change File</button>
+            </div>
+
+            <div class="upload-actions">
+                <button id="analyzeButton" class="btn btn-primary" onclick="analyzeReport()">
+                    <span class="btn-text">Analyze Medical Report</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Loading Spinner State -->
+            <div id="loadingIndicator" class="loading-container hidden">
+                <div class="spinner"></div>
+                <div class="loading-labels">
+                    <p class="loading-title">Analyzing medical report with local AI...</p>
+                    <p class="loading-desc">Extracting text via PyMuPDF, running Llama 3.2 3B condition separation, and verifying laboratory parameters.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- DASHBOARD RESULTS CONTAINER -->
+        <main id="resultsContainer" class="results-container hidden">
+
+            <!-- Stats Overview Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Lab Parameters</div>
+                    <div class="stat-val" id="statTotalParameters">0</div>
+                    <div class="stat-sub">Categorized from report</div>
+                </div>
+                <div class="stat-card normal-border">
+                    <div class="stat-label">Normal Findings</div>
+                    <div class="stat-val text-green" id="statNormalCount">0</div>
+                    <div class="stat-sub">Within standard/provided range</div>
+                </div>
+                <div class="stat-card abnormal-border">
+                    <div class="stat-label">Abnormal Findings</div>
+                    <div class="stat-val text-red" id="statAbnormalCount">0</div>
+                    <div class="stat-sub">Flagged outside limits</div>
+                </div>
+                <div class="stat-card indigo-border">
+                    <div class="stat-label">Conditions / Diagnoses</div>
+                    <div class="stat-val text-indigo" id="statConditionsCount">0</div>
+                    <div class="stat-sub">Explicitly documented only</div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: Patient Information -->
+            <section class="card" id="patientInfoSection">
+                <div class="card-header">
+                    <h2>2. Patient Information</h2>
+                    <span class="tag tag-blue">Extracted Clinical Profile</span>
+                </div>
+                <div class="patient-grid" id="patientGrid">
+                    <!-- Populated dynamically by script.js -->
+                </div>
+            </section>
+
+            <!-- SECTION 3: Sensitive Information Detected & Masking -->
+            <section class="card" id="sensitiveSection">
+                <div class="card-header">
+                    <div class="header-left">
+                        <h2>3. Sensitive Information Detected</h2>
+                        <span id="sensitiveDetectionBadge" class="badge">Checking...</span>
+                    </div>
+                    <div class="mask-toggle-wrapper">
+                        <button id="maskToggleBtn" class="btn btn-secondary" onclick="toggleSensitiveMasking()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            <span id="maskBtnText">Mask Sensitive Information</span>
+                        </button>
+                    </div>
+                </div>
+                <p class="section-intro">
+                    Identifies confidential protected health information (PHI) fields. Masking replaces patient identifiers with <code>[REDACTED]</code> across the dashboard and generated report without modifying the original uploaded file.
+                </p>
+                <div class="category-chips-grid" id="sensitiveCategoriesGrid">
+                    <!-- Populated dynamically -->
+                </div>
+            </section>
+
+            <!-- SECTION 4: Documented Diagnoses -->
+            <section class="card" id="diagnosesSection">
+                <div class="card-header">
+                    <h2>4. Documented Diagnoses</h2>
+                    <span class="tag tag-emerald">Explicitly Documented Diagnoses</span>
+                </div>
+                <div class="info-callout callout-info">
+                    <p><strong>Medical Safety Guardrail:</strong> Diagnoses shown here are strictly restricted to diagnoses explicitly confirmed in the uploaded report. Elevated or abnormal laboratory results are NOT assumed to be diagnoses.</p>
+                </div>
+                <ul class="condition-list" id="diagnosesList">
+                    <!-- Populated dynamically -->
+                </ul>
+            </section>
+
+            <!-- SECTION 5: Patient Medical Conditions -->
+            <section class="card" id="medicalConditionsSection">
+                <div class="card-header">
+                    <h2>5. Patient Medical Conditions</h2>
+                    <span class="tag tag-indigo">Known Medical Conditions</span>
+                </div>
+                <ul class="condition-list" id="conditionsList">
+                    <!-- Populated dynamically -->
+                </ul>
+            </section>
+
+            <!-- Two-Column Group: Symptoms & Clinical Findings -->
+            <div class="grid-2-col">
+                <!-- SECTION 6: Reported Symptoms -->
+                <section class="card" id="symptomsSection">
+                    <div class="card-header">
+                        <h2>6. Reported Symptoms</h2>
+                        <span class="tag">Patient Complaints</span>
+                    </div>
+                    <ul class="condition-list" id="symptomsList">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </section>
+
+                <!-- SECTION 7: Clinical Findings -->
+                <section class="card" id="clinicalFindingsSection">
+                    <div class="card-header">
+                        <h2>7. Clinical Findings</h2>
+                        <span class="tag">Objective Observations</span>
+                    </div>
+                    <ul class="condition-list" id="findingsList">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </section>
+            </div>
+
+            <!-- SECTION 8: Laboratory Results -->
+            <section class="card" id="labResultsSection">
+                <div class="card-header">
+                    <h2>8. Laboratory Results</h2>
+                    <span class="tag tag-purple">Test Values &amp; Reference Ranges</span>
+                </div>
+                <p class="section-intro">
+                    Classified based on the report's own documented reference intervals where available, or standard laboratory standards.
+                </p>
+                <div class="table-responsive">
+                    <table class="clinical-table">
+                        <thead>
+                            <tr>
+                                <th>Test Name</th>
+                                <th>Result / Value</th>
+                                <th>Unit</th>
+                                <th>Reference Range</th>
+                                <th>Status Classification</th>
+                            </tr>
+                        </thead>
+                        <tbody id="labResultsTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Two-Column Group: Normal & Abnormal Findings -->
+            <div class="grid-2-col">
+                <!-- SECTION 9: Normal Findings -->
+                <section class="card border-green-light" id="normalFindingsSection">
+                    <div class="card-header">
+                        <h2>9. Normal Findings</h2>
+                        <span class="badge badge-normal">Within Reference Limits</span>
+                    </div>
+                    <ul class="status-items-list green" id="normalFindingsList">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </section>
+
+                <!-- SECTION 10: Abnormal Findings -->
+                <section class="card border-red-light" id="abnormalFindingsSection">
+                    <div class="card-header">
+                        <h2>10. Abnormal Findings</h2>
+                        <span class="badge badge-abnormal">Requires Clinical Review</span>
+                    </div>
+                    <ul class="status-items-list red" id="abnormalFindingsList">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </section>
+            </div>
+
+            <!-- SECTION 11: Medications / Treatments Mentioned -->
+            <section class="card" id="medicationsSection">
+                <div class="card-header">
+                    <h2>11. Medications / Treatments Mentioned</h2>
+                    <span class="tag tag-amber">Documented Pharmacotherapy</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="clinical-table">
+                        <thead>
+                            <tr>
+                                <th>Medication Name</th>
+                                <th>Dose</th>
+                                <th>Frequency</th>
+                                <th>Route</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="medicationsTableBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- SECTION 12: AI Medical Summary -->
+            <section class="card summary-card" id="aiSummarySection">
+                <div class="card-header">
+                    <div class="header-left">
+                        <h2>12. AI Medical Summary</h2>
+                        <span class="ai-pill">Synthesized by Local Llama 3.2 3B</span>
+                    </div>
+                </div>
+                <div class="summary-body" id="aiSummaryBody">
+                    <!-- Populated dynamically -->
+                </div>
+            </section>
+
+            <!-- SECTION 13: Important Notes -->
+            <section class="card" id="importantNotesSection">
+                <div class="card-header">
+                    <h2>13. Important Notes &amp; Recommendations</h2>
+                    <span class="tag">Follow-Up &amp; Instructions</span>
+                </div>
+                <ul class="notes-list" id="importantNotesList">
+                    <!-- Populated dynamically -->
+                </ul>
+            </section>
+
+            <!-- SECTION 14: Extracted Report Text -->
+            <section class="card" id="rawTextSection">
+                <div class="card-header">
+                    <h2>14. Extracted Report Text</h2>
+                    <div class="header-actions">
+                        <button type="button" class="btn btn-small" onclick="copyExtractedText()">Copy Text</button>
+                    </div>
+                </div>
+                <pre class="raw-text-viewer" id="rawTextViewer"></pre>
+            </section>
+
+            <!-- SECTION 15: Download Report -->
+            <section class="download-section" id="downloadSection">
+                <div class="download-card">
+                    <div class="download-text">
+                        <h3>15. Download PDF Report</h3>
+                        <p>Generate and export a publication-ready PDF summary containing all separated categories and medical safety disclosures.</p>
+                    </div>
+                    <button class="btn btn-download" id="downloadReportBtn" onclick="downloadPdfReport()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        <span>Download PDF Report</span>
+                    </button>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>
+                <strong>AI-Based Medical Report Summarization System</strong> &bull; Mini Project Edition
+            </p>
+            <p class="footer-sub">
+                Designed for Educational and Research Purposes. Runs completely offline via Local Ollama. No data is transmitted to cloud services.
+            </p>
+        </footer>
+
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
